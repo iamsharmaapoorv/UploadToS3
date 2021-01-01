@@ -18,5 +18,8 @@
     "S3"
   ],
   "author": "Apoorv Sharma",
-  "license": "ISC"
+  "license": "ISC",
+  "dependencies": {
+    "db-migrate": "^0.11.12"
+  }
 }
