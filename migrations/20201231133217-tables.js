@@ -18,8 +18,10 @@ images = (db) => {
   db.createTable('images', {
     id: { type: 'int', primaryKey: true, autoIncrement: true },
     name: 'string',
-    type: 'string',
-    size: 'int',
+    description: 'string',
+    filetype: 'string',
+    height: 'int',
+    width: 'int',
     created: 'datetime'  // shorthand notation
   })
 }
