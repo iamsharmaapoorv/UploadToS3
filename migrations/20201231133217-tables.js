@@ -20,9 +20,7 @@ images = (db) => {
     name: 'string',
     description: 'string',
     filetype: 'string',
-    height: 'int',
-    width: 'int',
-    created: 'datetime'  // shorthand notation
+    size: 'int'
   })
 }
 exports.up = function(db) {
