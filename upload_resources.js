@@ -1,7 +1,36 @@
-import { SharedIniFileCredentials, config, S3 } from 'aws-sdk';
-const createError = require('http-errors')
+const aws = require('aws-sdk');
+const createError = require('http-errors');
+const fs = require('fs');
+const mysql = require('mysql2/promise');
 
-export const checkConstraints = (name, body, description) => {
+const connectToDB = async () => {
+    try {
+        let rawdata = fs.readFileSync('./db_creds.json');
+        let dbCreds = JSON.parse(rawdata);
+        return await mysql.createConnection({
+            host: dbCreds.host,
+            user: dbCreds.username,
+            password: dbCreds.password,
+            database: dbCreds.database,
+            port: dbCreds.port
+        });
+    } catch (error) {
+        throw Error(error);
+    }
+};
+
+let db = null;
+exports.initialize = async () => {
+    try{
+        db = await connectToDB();
+        return true;
+    }
+    catch{
+        return false;
+    }
+};
+
+exports.checkConstraints = (name, body, description) => {
     if (!name.match(/.(jpg|jpeg|png)$/i))
         throw createError(400, 'Incompatible filetype.');
     if (!description)
@@ -10,57 +39,63 @@ export const checkConstraints = (name, body, description) => {
         throw createError(404, 'Empty file.');
     if (body.size > 500000)
         throw createError(404, 'File size bigger than 500 KB.');
-}
+};
 
-export const checkExists = (name) => {
-    db
-        .query(`select name from images where name = ${name}`)
-        .then(res => {
-            if (res.length !== 0) {
-                throw createError(400, 'File already exists.');
-            }
-        })
-        .catch(err => { throw createError(500, err); })
-}
+exports.checkExists = async (name) => {
+    try {
+        result = await db.execute(`select name from images where name = '${name}'`);
+        console.log(`done checkexists query`);
+        console.log(result)
+        if (result[0].length > 0) {
+            throw createError(400, 'File already exists.');
+        }
+    }
+    catch (error) {
+        throw new Error(error);
+    }
+};
 
-export const uploadPhoto = (Key, body) => {
-    const credentials = new SharedIniFileCredentials({ profile: 'default' });
-    config.credentials = credentials;
+exports.uploadPhoto = async (Key, bucketName, body) => {
+    aws.config.loadFromPath('./.aws/credentials.json');
 
-    let upload = new S3.ManagedUpload({
+    let upload = new aws.S3.ManagedUpload({
         params: {
             Bucket: bucketName,
             Key: Key,
             Body: body,
             //ACL: "public-read"
         }
-    })
-    let promise = upload.promise();
-    promise
-        .then(
-            function (data) {
-                return data;
-            })
-        .catch(
-            function (err) {
-                throw createError(500, err);
-            });
-}
-
-export const deletePhoto = (Key) => {
-    s3.deleteObject({ Bucket: bucketName, Key: Key }, function (err, data) {
-        if (err) {
-            throw createError(400, err);
-        }
-        return data;
     });
-}
+    data = await upload.promise();
+    console.log('uploaded', data);
+    // promise
+    //     .then(
+    //         function (data) {
+    //             console.log('uploaded', data)
+    //             return data;
+    //         },
+    //         function (err) {
+    //             throw createError(500, err)
+    //         });
 
-export const insertRecord = (name, description, size) => {
-    let filetype = name.split('.').pop();
-    db
-        .query(`insert into images (name, description, filetype, size)
-values (${name}, ${description}, ${filetype}, ${size})`)
-        .then(response => { return response; })
-        .catch(error => { throw createError(500, error); });
-}
+};
+
+exports.deletePhoto = async (Key) => {
+    try {
+        return await s3.deleteObject({ Bucket: bucketName, Key: Key });
+    }
+    catch (error) {
+        throw new Error(error);
+    }
+};
+
+exports.insertRecord = async (name, description, size) => {
+    try {
+        let filetype = name.split('.').pop();
+        return await db.execute(`insert into images (name, description, filetype, size)
+    values ('${name}', '${description}', '${filetype}', '${size}')`);
+    }
+    catch (error) {
+        throw new Error(error);
+    }
+};

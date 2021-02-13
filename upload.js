@@ -1,63 +1,64 @@
 'use strict';
 
-import { readFileSync, createReadStream } from 'fs';
-import { SharedIniFileCredentials, config, S3 } from 'aws-sdk';
-import {checkConstraints, checkExists, uploadPhoto, deletePhoto, insertRecord} from 'upload_resources';
-const createError = require('http-errors')
+const fs = require('fs');
+const createError = require('http-errors');
 const express = require('express');
-const bodyParser = require("body-parser");
-const pgp = require('pg-promise')(/* options */);
+const upload_resources = require('./upload_resources');
+let router = require('express').Router();
 
-let app = express();
-app.use(bodyParser.urlencoded({ extended: false }));
-app.use(bodyParser.json());
 
-const connectToDB = () => {
-  try {
-    let rawdata = readFileSync('db_creds.json');
-    let dbCreds = JSON.parse(rawdata);
-    return pgp(`postgres://${dbCreds.username}:${dbCreds.password}@${dbCreds.host}:${dbCreds.port}/${dbCreds.database}`);
-  } catch (error) {
-    throw error;
-  }
-  
+
+
+let hasLoaded = false;
+async function loadDB() {
+  hasLoaded = await upload_resources.initialize();
 }
+loadDB();
 
-const db = connectToDB();
 
-app.post('/upload', function (req, res) {
+router.post('/upload', async function (req, res) {
   try {
-    let name = req.body('name');
-    let description = req.body('description');
-    let body = createReadStream(name);
-    const bucketName = 'apoorv-aws-project'
-    const Key = encodeURIComponent(name)
-    checkConstraints(name, body, description);
-    checkExists(name);
-    uploadPhoto(Key, bucketName);
-    let imagesize = body.size/1000;
-    if (insertRecord(name, description, imagesize)) {
+    //await upload_resources.initialize();
+    if (!hasLoaded) {
+      setTimeout(function () { }, 1000);
+      if (!hasLoaded) {
+        throw new Error('DB could not be initialized.');
+      }
+    }
+    console.log(req.body);
+    let name = req.body.name;
+    console.log(name);
+    let description = req.body.description;
+    let body = fs.readFileSync(`./public/images/${name}`);
+    const bucketName = 'apoorv-aws-project';
+    const Key = encodeURIComponent(name);
+    upload_resources.checkConstraints(name, body, description);
+    await upload_resources.checkExists(name);
+    await upload_resources.uploadPhoto(Key, bucketName, body);
+    let imagesize = body.size / 1000;
+    if (upload_resources.insertRecord(name, description, imagesize)) {
       res.status = 200;
       res.statusMessage = "Image uploaded successfully.";
       return res;
     }
     else {
-      deletePhoto(key, bucketName);
+      upload_resources.deletePhoto(key, bucketName);
       res.status = 500;
       res.statusMessage = "Failure while inserting image details into RDS.";
       return res;
     }
   }
   catch (error) {
-    if (createError.isHttpError(error)) {
+    if (error.isHttpError) {
       res.status = error.status;
     }
-    else{
+    else {
       res.status = 500;
     }
     res.statusMessage = error.message;
     return res;
   }
-})
+});
 
 
+module.exports = router;
